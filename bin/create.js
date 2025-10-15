@@ -1,76 +1,84 @@
 #!/usr/bin/env node
-
+/* eslint-disable no-console */
+import fs from 'fs';
+import path from 'path';
+import url from 'url';
 import { execSync } from 'child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { createReadStream } from 'fs';
-import { dirname, join, resolve } from 'path';
-import { fileURLToPath } from 'url';
-import { createInterface } from 'readline';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const repoRoot = path.join(__dirname, '..');
+const templateDir = path.join(repoRoot, 'template');
 
-const rl = createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+const args = process.argv.slice(2);
+const nameArg = args.find((a) => !a.startsWith('-'));
+const skipInstall = args.includes('--no-install');
+const projectName = nameArg || 'my-x402-next-app';
+const targetDir = path.resolve(process.cwd(), projectName);
 
-function question(query) {
-  return new Promise((resolve) => rl.question(query, resolve));
+if (fs.existsSync(targetDir) && fs.readdirSync(targetDir).length) {
+  console.error(`\nTarget directory '${projectName}' is not empty. Choose another name or empty it.\n`);
+  process.exit(1);
 }
 
-async function main() {
-  console.log('🚀 Creating your x402 Next.js app...\n');
+// copy template
+fs.cpSync(templateDir, targetDir, { recursive: true });
 
-  const projectName = await question('What is your project named? ');
-  if (!projectName) {
-    console.error('❌ Project name is required');
-    process.exit(1);
+// ensure the root package.json name matches the project
+const rootPkgPath = path.join(targetDir, 'package.json');
+if (fs.existsSync(rootPkgPath)) {
+  const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+  rootPkg.name = projectName.replace(/[^a-zA-Z0-9-_./@]/g, '-');
+  fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2));
+}
+
+// perform post-scaffold steps for convenience
+console.log(`\nSetting up your project in: ${targetDir}`);
+
+// 1) Copy environment template for Next.js (.env.local preferred)
+try {
+  const envLocal = path.join(targetDir, '.env-local');
+  const envExample = path.join(targetDir, '.env.example');
+  const envLocalTarget = path.join(targetDir, '.env.local');
+  if (fs.existsSync(envLocal)) {
+    console.log('- Creating .env.local from .env-local');
+    fs.copyFileSync(envLocal, envLocalTarget);
+  } else if (fs.existsSync(envExample)) {
+    console.log('- Creating .env.local from .env.example');
+    fs.copyFileSync(envExample, envLocalTarget);
+  } else {
+    console.log('- No .env-local or .env.example found; please create .env.local manually');
   }
+} catch (err) {
+  console.warn('- Skipped env setup:', err instanceof Error ? err.message : String(err));
+}
 
-  const projectPath = resolve(process.cwd(), projectName);
-  
-  if (existsSync(projectPath)) {
-    console.error(`❌ Directory ${projectName} already exists`);
-    process.exit(1);
-  }
-
-  console.log(`\n📁 Creating project in ${projectPath}...`);
-  mkdirSync(projectPath, { recursive: true });
-
-  // Copy template files
-  const templateDir = join(__dirname, '..', 'template');
-  copyDirectory(templateDir, projectPath);
-
-  // Update package.json with project name
-  const packageJsonPath = join(projectPath, 'package.json');
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-  packageJson.name = projectName;
-  writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-
-  console.log('\n📦 Installing dependencies...');
+// 2) Install dependencies (unless skipped)
+if (!skipInstall) {
   try {
-    execSync('npm install', { cwd: projectPath, stdio: 'inherit' });
-  } catch (error) {
-    console.error('❌ Failed to install dependencies');
-    console.error('Please run "npm install" manually in your project directory');
+    console.log('- Installing dependencies (npm install)...');
+    execSync('npm install', { stdio: 'inherit', cwd: targetDir });
+  } catch (err) {
+    console.warn('- npm install failed, you may run it manually:', err instanceof Error ? err.message : String(err));
   }
-
-  console.log('\n✅ Success! Your x402 Next.js app is ready!');
-  console.log(`\n📋 Next steps:`);
-  console.log(`   cd ${projectName}`);
-  console.log(`   cp .env.example .env.local`);
-  console.log(`   # Edit .env.local with your configuration`);
-  console.log(`   npm run dev`);
-  console.log(`\n🌐 Open http://localhost:3000 to see your app`);
-
-  rl.close();
+} else {
+  console.log('- Skipping dependency installation (--no-install)');
 }
 
-function copyDirectory(src, dest) {
-  const files = readFileSync(join(__dirname, '..', 'template'), 'utf8');
-  // This is a simplified version - in a real implementation, you'd recursively copy files
-  // For now, we'll create the essential files directly
-}
+// init git (best-effort)
+try {
+  execSync('git init', { stdio: 'ignore', cwd: targetDir });
+} catch {}
 
-main().catch(console.error);
+// print next steps
+console.log(`
+Successfully created ${projectName}!
+
+You now have a starter example for a Next.js app integrated with x402.
+
+Next steps:
+  cd ${projectName}
+  # edit values inside .env.local
+  npm run dev
+
+Happy building 🏗️
+`);

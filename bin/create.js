@@ -11,7 +11,6 @@ const templateDir = path.join(repoRoot, 'template');
 
 const args = process.argv.slice(2);
 const nameArg = args.find((a) => !a.startsWith('-'));
-const skipInstall = args.includes('--no-install');
 const projectName = nameArg || 'my-x402-next-app';
 const targetDir = path.resolve(process.cwd(), projectName);
 
@@ -36,32 +35,36 @@ console.log(`\nSetting up your project in: ${targetDir}`);
 
 // 1) Copy environment template for Next.js (.env.local preferred)
 try {
-  const envLocal = path.join(targetDir, '.env-local');
-  const envExample = path.join(targetDir, '.env.example');
-  const envLocalTarget = path.join(targetDir, '.env.local');
-  if (fs.existsSync(envLocal)) {
-    console.log('- Creating .env.local from .env-local');
-    fs.copyFileSync(envLocal, envLocalTarget);
-  } else if (fs.existsSync(envExample)) {
-    console.log('- Creating .env.local from .env.example');
-    fs.copyFileSync(envExample, envLocalTarget);
+  // Look for common env template filenames in priority order
+  const candidates = [
+    { file: 'env.local', label: 'env.local' },
+    { file: '.env-local', label: '.env-local' },
+    { file: 'env.example', label: 'env.example' },
+    { file: '.env.example', label: '.env.example' },
+  ];
+
+  const found = candidates
+    .map((c) => ({ ...c, abs: path.join(targetDir, c.file) }))
+    .find((c) => fs.existsSync(c.abs));
+
+  const envTarget = path.join(targetDir, '.env');
+
+  if (found) {
+    console.log(`- Creating .env from ${found.label}`);
+    fs.copyFileSync(found.abs, envTarget);
   } else {
-    console.log('- No .env-local or .env.example found; please create .env.local manually');
+    console.log('- No env template found; please create .env manually');
   }
 } catch (err) {
   console.warn('- Skipped env setup:', err instanceof Error ? err.message : String(err));
 }
 
-// 2) Install dependencies (unless skipped)
-if (!skipInstall) {
-  try {
-    console.log('- Installing dependencies (npm install)...');
-    execSync('npm install', { stdio: 'inherit', cwd: targetDir });
-  } catch (err) {
-    console.warn('- npm install failed, you may run it manually:', err instanceof Error ? err.message : String(err));
-  }
-} else {
-  console.log('- Skipping dependency installation (--no-install)');
+// 2) Install dependencies (always)
+try {
+  console.log('- Installing dependencies (npm install)...');
+  execSync('npm install', { stdio: 'inherit', cwd: targetDir });
+} catch (err) {
+  console.warn('- npm install failed, you may run it manually:', err instanceof Error ? err.message : String(err));
 }
 
 // init git (best-effort)
@@ -77,7 +80,7 @@ You now have a starter example for a Next.js app integrated with x402.
 
 Next steps:
   cd ${projectName}
-  # edit values inside .env.local
+  # edit values inside .env
   npm run dev
 
 Happy building 🏗️

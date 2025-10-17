@@ -10,6 +10,22 @@ mkdir -p vendor/upstream
 mkdir -p template
 rsync -a --delete vendor/upstream/ template/
 
+# Ensure @coinbase/x402 version matches x402-next version (standalone, no workspace)
+if [[ -f template/package.json ]]; then
+  node - <<'NODE'
+const fs = require('fs');
+const path = 'template/package.json';
+const json = JSON.parse(fs.readFileSync(path, 'utf8'));
+const deps = json.dependencies || {};
+const x402NextVersion = deps['x402-next'];
+if (x402NextVersion) {
+  deps['@coinbase/x402'] = x402NextVersion;
+  json.dependencies = deps;
+  fs.writeFileSync(path, JSON.stringify(json, null, 2));
+}
+NODE
+fi
+
 # Ensure env keys are present and updated in env templates after sync
 DEFAULT_FACILITATOR_URL="https://facilitator.payai.network"
 DEFAULT_NETWORK="solana-devnet"

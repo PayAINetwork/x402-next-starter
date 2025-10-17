@@ -1,111 +1,83 @@
-name: Sync from Upstream and Open PR
-
-on:
-  workflow_dispatch:
-    inputs:
-      upstream_repo:
-        description: "owner/repo of upstream source"
-        required: false
-      upstream_branch:
-        description: "Branch to sync from"
-        required: false
-        default: main
-  schedule:
-    - cron: "17 3 * * *" # daily
+name: Sync upstream x402 examples/fullstack/next
 
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
-env:
-  DEFAULT_UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO }}
-  DEFAULT_UPSTREAM_BRANCH: ${{ vars.UPSTREAM_BRANCH || 'main' }}
+on:
+  schedule: [ { cron: "0 * * * *" } ]  # hourly
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions: { contents: write, pull-requests: write }
+    env:
+      UPSTREAM_REPO: coinbase/x402
+      UPSTREAM_PATH: examples/typescript/fullstack/next
     steps:
-      - name: Checkout target repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Configure git
+      - name: Sparse clone upstream
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/${UPSTREAM_REPO}.git upstream
+          cd upstream
+          git sparse-checkout set "${UPSTREAM_PATH}"
+          echo "UPSTREAM_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-      - name: Determine upstream
-        id: upstream
+      - name: Resolve latest x402-next version from npm
         run: |
-          # Prefer manual input, then org-level repo var, then fallback to required secret
-          UPSTREAM_REPO="${{ github.event.inputs.upstream_repo }}"
-          if [ -z "$UPSTREAM_REPO" ]; then
-            UPSTREAM_REPO="$DEFAULT_UPSTREAM_REPO"
-          fi
-          if [ -z "$UPSTREAM_REPO" ]; then
-            echo "::error::Set repository variable UPSTREAM_REPO (owner/repo) or provide workflow input upstream_repo"
-            exit 1
-          fi
-          UPSTREAM_BRANCH_INPUT="${{ github.event.inputs.upstream_branch }}"
-          if [ -z "$UPSTREAM_BRANCH_INPUT" ]; then
-            UPSTREAM_BRANCH_INPUT="$DEFAULT_UPSTREAM_BRANCH"
-          fi
-          echo "repo=$UPSTREAM_REPO" >> $GITHUB_OUTPUT
-          echo "branch=$UPSTREAM_BRANCH_INPUT" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          VERSION=$(npm view x402-next version || echo "0.0.0")
+          echo "X402_NEXT_VERSION=${VERSION}" >> $GITHUB_ENV
 
-      - name: Add upstream remote and fetch
-        env:
-          REPO: ${{ steps.upstream.outputs.repo }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record resolved version in root package.json
         run: |
-          git remote add upstream https://github.com/$REPO.git
-          git fetch upstream
+          node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));(j.config??={});j.config.x402NextVersion=process.env.X402_NEXT_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2));"
 
-      - name: Create sync branch
-        env:
-          BRANCH: ${{ steps.upstream.outputs.branch }}
+      - name: Stage upstream into vendor folder
         run: |
-          set -e
-          SYNC_BRANCH="chore/sync-upstream-$(date +%Y%m%d-%H%M%S)"
-          echo "SYNC_BRANCH=$SYNC_BRANCH" >> $GITHUB_ENV
-          git switch -c "$SYNC_BRANCH"
-          git merge --no-edit --no-ff "upstream/$BRANCH" || true
+          rm -rf vendor/upstream && mkdir -p vendor/upstream
+          rsync -a --delete upstream/${UPSTREAM_PATH}/ vendor/upstream/
 
-      - name: Detect changes
-        id: changes
+      - name: Sanitize & map into template (best-effort)
         run: |
-          if git diff --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+          if [ -f scripts/sanitize.sh ]; then
+            chmod +x scripts/sanitize.sh
+            scripts/sanitize.sh "${UPSTREAM_PATH}" "${UPSTREAM_SHA}"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "No sanitize script found; skipping."
           fi
 
-      - name: Commit merge if needed
-        if: steps.changes.outputs.changed == 'true'
+      - name: Inject x402-next version into template/package.json
         run: |
-          # In case of auto-mergable changes without commit, stage and commit
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(sync): merge from upstream"
+          node -e "const fs=require('fs');const p='template/package.json';if(fs.existsSync(p)){const j=JSON.parse(fs.readFileSync(p,'utf8'));const v=process.env.X402_NEXT_VERSION;const setVer=(obj)=>{if(!obj)return false; if(Object.prototype.hasOwnProperty.call(obj,'x402-next')){if(v!=='0.0.0'){obj['x402-next']='^'+v;} else {delete obj['x402-next'];} return true;} return false;};const changed=setVer(j.dependencies)||setVer(j.devDependencies);if(!changed && v!=='0.0.0'){(j.dependencies??={})['x402-next']='^'+v;}fs.writeFileSync(p,JSON.stringify(j,null,2));}"
+
+      - name: Determine if there are changes
+        run: |
+          # include untracked files in change detection
+          if git diff --quiet && git ls-files --others --exclude-standard --error-unmatch . >/dev/null 2>&1; then
+            echo "HAS_CHANGES=false" >> $GITHUB_ENV
+          else
+            echo "HAS_CHANGES=true" >> $GITHUB_ENV
           fi
 
-      - name: Open Pull Request
-        if: steps.changes.outputs.changed == 'true'
+      - name: Bump starter package version (patch)
+        if: ${{ env.HAS_CHANGES == 'true' }}
+        run: |
+          node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));const v=j.version||'0.0.0';const parts=v.split('.').map(n=>parseInt(n,10));while(parts.length<3)parts.push(0);parts[2]=isNaN(parts[2])?0:parts[2]+1;j.version=parts.join('.');fs.writeFileSync(p,JSON.stringify(j,null,2));"
+
+      - name: Open PR with changes
         uses: peter-evans/create-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ env.SYNC_BRANCH }}
-          title: "chore(sync): update from upstream ${{ steps.upstream.outputs.repo }}@${{ steps.upstream.outputs.branch }}"
+          commit-message: "chore(next): sync from ${UPSTREAM_REPO}@${{ env.UPSTREAM_SHA }}"
+          branch: chore/sync-upstream
+          title: "Sync upstream (fullstack/next) — ${{ env.UPSTREAM_SHA }}"
           body: |
-            This PR includes changes synced from `${{ steps.upstream.outputs.repo }}` on branch `${{ steps.upstream.outputs.branch }}`.
-
-            - Please review diffs.
-            - Resolve any conflicts if present.
-          labels: chore, sync
-          draft: false
-
-      - name: No changes
-        if: steps.changes.outputs.changed != 'true'
-        run: echo "No upstream changes detected."
+            Auto-synced from https://github.com/${{ env.UPSTREAM_REPO }}
+            Path: ${{ env.UPSTREAM_PATH }}
+            SHA:  ${{ env.UPSTREAM_SHA }}
 

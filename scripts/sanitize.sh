@@ -10,23 +10,29 @@ mkdir -p vendor/upstream
 mkdir -p template
 rsync -a --delete vendor/upstream/ template/
 
-# Ensure facilitator URL in env templates after sync (Next uses NEXT_PUBLIC_ prefix)
+# Ensure env keys are present and updated in env templates after sync
 DEFAULT_FACILITATOR_URL="https://facilitator.payai.network"
-update_facilitator_url() {
+DEFAULT_NETWORK="solana-devnet"
+
+update_env_var() {
   local file="$1"
+  local key="$2"
+  local value="$3"
   if [[ -f "$file" ]]; then
-    if grep -q '^NEXT_PUBLIC_FACILITATOR_URL=' "$file"; then
-      sed -i.bak "s|^NEXT_PUBLIC_FACILITATOR_URL=.*|NEXT_PUBLIC_FACILITATOR_URL=${DEFAULT_FACILITATOR_URL}|" "$file" && rm -f "$file.bak"
+    if grep -Eq "^[[:space:]]*${key}=" "$file"; then
+      # Replace existing non-commented line for the key
+      sed -i.bak -E "s|^[[:space:]]*${key}=.*|${key}=${value}|" "$file" && rm -f "$file.bak"
     else
-      printf "\nNEXT_PUBLIC_FACILITATOR_URL=%s\n" "$DEFAULT_FACILITATOR_URL" >> "$file"
+      printf "\n%s=%s\n" "$key" "$value" >> "$file"
     fi
   fi
 }
 
 # Cover common env file variants for Next starters
-update_facilitator_url template/env.local
-update_facilitator_url template/.env.local
-update_facilitator_url template/.env.example
+for env_file in template/env.local template/.env.local template/.env.example; do
+  update_env_var "$env_file" "NEXT_PUBLIC_FACILITATOR_URL" "$DEFAULT_FACILITATOR_URL"
+  update_env_var "$env_file" "NETWORK" "$DEFAULT_NETWORK"
+done
 
 # Refresh NOTICE with the commit we synced from
 cat > NOTICE <<EOF

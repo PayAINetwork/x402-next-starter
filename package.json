@@ -1,5 +1,5 @@
 {
-  "name": "@payai/x402-next-starter",
+  "name": "x402-next-starter",
   "version": "0.1.1",
   "private": false,
   "description": "Create an x402 Next.js app in less than 2 minutes!",

@@ -7,20 +7,22 @@ import importPlugin from "eslint-plugin-import";
 
 export default [
   {
-    ignores: [".next/**", "node_modules/**", "out/**"],
+    ignores: ["dist/**", "node_modules/**", ".next/**"],
   },
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.ts"],
     languageOptions: {
       parser: tsParser,
       sourceType: "module",
       ecmaVersion: 2020,
       globals: {
-        React: "readonly",
-        JSX: "readonly",
         process: "readonly",
+        __dirname: "readonly",
+        module: "readonly",
+        require: "readonly",
         Buffer: "readonly",
         console: "readonly",
+        exports: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
         setInterval: "readonly",

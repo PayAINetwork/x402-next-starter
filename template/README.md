@@ -1,148 +1,127 @@
-# x402 Next.js Starter
+# x402-next Example App
 
-A Next.js application template with x402 payment protocol integration. Create a Next.js app with payment middleware in less than 2 minutes!
+This is a Next.js application that demonstrates how to use the `x402-next` middleware to implement paywall functionality in your Next.js routes.
 
-## Features
+## Prerequisites
 
-- ⚡ Next.js 14 with App Router
-- 💳 x402 payment middleware integration
-- 🎨 Tailwind CSS for styling
-- 📝 TypeScript support
-- 🔧 ESLint and Prettier configuration
-- 🚀 Ready-to-deploy API routes
+- Node.js v20+ (install via [nvm](https://github.com/nvm-sh/nvm))
+- pnpm v10 (install via [pnpm.io/installation](https://pnpm.io/installation))
+- A valid Ethereum address for receiving payments
 
-## Quick Start
+## Setup
 
-### Using the CLI
+1. Copy `.env-local` to `.env` and add your Ethereum address to receive payments:
 
 ```bash
-npx @payai/x402-next-starter my-app
-cd my-app
-cp env.example .env.local
-# Edit .env.local with your configuration
-npm run dev
+cp .env-local .env
 ```
 
-### Manual Setup
-
-1. Clone this repository
-2. Copy the `template` folder to your project directory
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Copy environment variables:
-   ```bash
-   cp env.example .env.local
-   ```
-5. Update `.env.local` with your configuration:
-   ```env
-   RESOURCE_WALLET_ADDRESS=0xYourAddress
-   NEXT_PUBLIC_FACILITATOR_URL=https://facilitator.example.com
-   ```
-6. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-## Configuration
-
-### Environment Variables
-
-- `RESOURCE_WALLET_ADDRESS`: Your wallet address for receiving payments
-- `NEXT_PUBLIC_FACILITATOR_URL`: URL of your x402 facilitator service
-- `NEXT_PUBLIC_NETWORK`: Optional network configuration (base-sepolia, base, solana)
-
-### Payment Configuration
-
-The payment middleware is configured in `middleware.ts`. You can customize:
-
-- Payment amounts (in USD or atomic units)
-- Supported networks
-- Protected routes
-- Token configurations
-
-## Project Structure
-
-```
-├── app/
-│   ├── api/
-│   │   ├── weather/          # Free weather API
-│   │   └── premium/          # Premium content API
-│   ├── premium/             # Premium content page
-│   ├── globals.css          # Global styles
-│   ├── layout.tsx           # Root layout
-│   └── page.tsx             # Home page
-├── middleware.ts            # x402 payment middleware
-├── next.config.js           # Next.js configuration
-├── tailwind.config.js       # Tailwind CSS configuration
-├── tsconfig.json            # TypeScript configuration
-└── package.json             # Dependencies and scripts
+2. Install and build all packages from the typescript examples root:
+```bash
+cd ../../
+pnpm install
+pnpm build
+cd fullstack/next
 ```
 
-## API Routes
+2. Install and start the Next.js example:
+```bash
+pnpm dev
+```
 
-### Free Weather API
-- **Endpoint**: `GET /api/weather`
-- **Description**: Returns current weather information
-- **Payment**: Free
+## Example Routes
 
-### Premium Content API
-- **Endpoint**: `GET /api/premium/content`
-- **Description**: Returns premium content
-- **Payment**: Required (configured in middleware)
+The app includes protected routes that require payment to access:
 
-## Development
+### Protected Page Route
+The `/protected` route requires a payment of $0.01 to access. The route is protected using the x402-next middleware:
 
-### Available Scripts
+```typescript
+// middleware.ts
+import { paymentMiddleware, Network, Resource } from "x402-next";
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
-- `npm run format` - Format code with Prettier
+const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL as Resource;
+const payTo = process.env.RESOURCE_WALLET_ADDRESS as Address;
+const network = process.env.NETWORK as Network;
 
-### Adding New Protected Routes
+export const middleware = paymentMiddleware(
+  payTo,
+  {
+    "/protected": {
+      price: "$0.01",
+      network,
+      config: {
+        description: "Access to protected content",
+      },
+    },
+  },
+  {
+    url: facilitatorUrl,
+  },
+);
 
-1. Add route configuration to `middleware.ts`:
-   ```typescript
-   {
-     '/api/new-route': {
-       price: '$0.01',
-       network: 'base-sepolia',
-     },
-   }
-   ```
+// Configure which paths the middleware should run on
+export const config = {
+  matcher: ["/protected/:path*"],
+};
+```
 
-2. Create the API route in `app/api/new-route/route.ts`
+## Response Format
 
-3. Update the matcher in `middleware.ts`:
-   ```typescript
-   export const config = {
-     matcher: [
-       '/api/new-route',
-       // ... other routes
-     ],
-   };
-   ```
+### Payment Required (402)
+```json
+{
+  "error": "X-PAYMENT header is required",
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "base",
+    "maxAmountRequired": "1000",
+    "resource": "http://localhost:3000/protected",
+    "description": "Access to protected content",
+    "mimeType": "",
+    "payTo": "0xYourAddress",
+    "maxTimeoutSeconds": 60,
+    "asset": "0x...",
+    "outputSchema": null,
+    "extra": null
+  }
+}
+```
 
-## Deployment
+### Successful Response
+```ts
+// Headers
+{
+  "X-PAYMENT-RESPONSE": "..." // Encoded response object
+}
+```
 
-This starter is ready for deployment on platforms like:
+## Extending the Example
 
-- Vercel (recommended for Next.js)
-- Netlify
-- Railway
-- DigitalOcean App Platform
+To add more protected routes, update the middleware configuration:
 
-Make sure to set your environment variables in your deployment platform.
+```typescript
+export const middleware = paymentMiddleware(
+  payTo,
+  {
+    "/protected": {
+      price: "$0.01",
+      network,
+      config: {
+        description: "Access to protected content",
+      },
+    },
+    "/api/premium": {
+      price: "$0.10",
+      network,
+      config: {
+        description: "Premium API access",
+      },
+    },
+  }
+);
 
-## Learn More
-
-- [x402 Protocol Documentation](https://github.com/coinbase/x402)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-
-## License
-
-Apache-2.0
+export const config = {
+  matcher: ["/protected/:path*", "/api/premium/:path*"],
+};
+```

@@ -30,10 +30,18 @@ fi
 DEFAULT_FACILITATOR_URL="https://facilitator.payai.network"
 DEFAULT_NETWORK="solana-devnet"
 
+# Replace or append a key=value in the provided file. Creates the file if explicitly requested.
 update_env_var() {
   local file="$1"
   local key="$2"
   local value="$3"
+  local create_if_missing="${4:-false}"
+
+  if [[ ! -f "$file" && "$create_if_missing" == "true" ]]; then
+    mkdir -p "$(dirname "$file")"
+    : > "$file"
+  fi
+
   if [[ -f "$file" ]]; then
     if grep -Eq "^[[:space:]]*${key}=" "$file"; then
       # Replace existing non-commented line for the key
@@ -44,11 +52,29 @@ update_env_var() {
   fi
 }
 
-# Cover common env file variants for Next starters
-for env_file in template/env.local template/.env.local template/.env.example; do
+# Cover common env file variants for Next starters (update if they exist)
+ENV_CANDIDATES=(
+  "template/.env"
+  "template/.env.local"
+  "template/.env.development"
+  "template/.env.example"
+  "template/.env.local.example"
+  "template/.env.sample"
+  "template/env.local"
+  "template/env.example"
+  "template/.env-local"
+)
+
+for env_file in "${ENV_CANDIDATES[@]}"; do
   update_env_var "$env_file" "NEXT_PUBLIC_FACILITATOR_URL" "$DEFAULT_FACILITATOR_URL"
   update_env_var "$env_file" "NETWORK" "$DEFAULT_NETWORK"
 done
+
+# Ensure a canonical .env.example exists with our expected defaults
+if [[ ! -f template/.env.example ]]; then
+  update_env_var "template/.env.example" "NEXT_PUBLIC_FACILITATOR_URL" "$DEFAULT_FACILITATOR_URL" true
+  update_env_var "template/.env.example" "NETWORK" "$DEFAULT_NETWORK" true
+fi
 
 # Refresh NOTICE with the commit we synced from
 cat > NOTICE <<EOF

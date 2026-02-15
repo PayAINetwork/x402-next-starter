@@ -1,5 +1,7 @@
 import { Address } from 'viem';
 import { paymentMiddleware, Network, Resource } from 'x402-next';
+// Optional: uncomment to enable PayAI API key auth (bypasses free tier limits)
+// import { createPayAIAuthHeaders } from '@payai/facilitator';
 
 const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL as Resource;
 const payTo = process.env.RESOURCE_WALLET_ADDRESS as Address;
@@ -18,9 +20,11 @@ export const middleware = paymentMiddleware(
   },
   {
     url: facilitatorUrl,
-    // Optional: add PayAI API keys to bypass free tier limits
-    // apiKeyId: process.env.PAYAI_API_KEY_ID,
-    // apiKeySecret: process.env.PAYAI_API_KEY_SECRET,
+    // Optional: uncomment the import above and this block to enable API key auth
+    // createAuthHeaders: createPayAIAuthHeaders(
+    //   process.env.PAYAI_API_KEY_ID!,
+    //   process.env.PAYAI_API_KEY_SECRET!,
+    // ),
   },
   {
     appName: 'Next x402 Demo',

@@ -63,17 +63,35 @@ jobs:
             echo "No sanitize script found; skipping."
           fi
 
-      - name: Verify env overrides preserved
+      - name: Verify PayAI patches are present
         run: |
           set -euo pipefail
-          FILE="template/.env.example"
-          if [[ ! -f "$FILE" ]]; then
-            echo "Missing $FILE after sanitize step" >&2
+
+          echo "Verifying template/.env-local..."
+          if [[ -f template/.env-local ]]; then
+            if grep -q 'PAYAI_API_KEY_ID' template/.env-local; then
+              echo "✓ PAYAI_API_KEY_ID placeholder present in .env-local"
+            else
+              echo "ERROR: PAYAI_API_KEY_ID not found in template/.env-local"
+              exit 1
+            fi
+          fi
+
+          echo "Verifying template/proxy.ts..."
+          if grep -q '@payai/facilitator' template/proxy.ts; then
+            echo "✓ @payai/facilitator import present in proxy.ts"
+          else
+            echo "ERROR: @payai/facilitator import not found in template/proxy.ts"
             exit 1
           fi
-          grep -Eq '^NEXT_PUBLIC_FACILITATOR_URL=https://facilitator.payai.network$' "$FILE" || { echo "NEXT_PUBLIC_FACILITATOR_URL incorrect in $FILE" >&2; exit 1; }
-          grep -Eq '^NETWORK=solana-devnet$' "$FILE" || { echo "NETWORK incorrect in $FILE" >&2; exit 1; }
-          echo "Env overrides verified in $FILE."
+
+          echo "Verifying template/package.json..."
+          if grep -q '@payai/facilitator' template/package.json; then
+            echo "✓ @payai/facilitator dependency present in package.json"
+          else
+            echo "ERROR: @payai/facilitator not found in template/package.json"
+            exit 1
+          fi
 
       - name: Inject x402 package versions into template/package.json
         run: |
@@ -86,7 +104,6 @@ jobs:
           if (!v || v === '0.0.0') process.exit(0);
 
           j.dependencies = j.dependencies || {};
-          // Ensure all required x402 packages are present with correct versions
           const x402Packages = ['@x402/next', '@x402/core', '@x402/evm', '@x402/svm', '@x402/paywall', '@x402/extensions'];
           for (const pkg of x402Packages) {
             j.dependencies[pkg] = '^' + v;
@@ -95,13 +112,17 @@ jobs:
           // Remove legacy x402-next if present
           delete j.dependencies['x402-next'];
 
+          // Ensure @payai/facilitator is always present
+          if (!j.dependencies['@payai/facilitator']) {
+            j.dependencies['@payai/facilitator'] = '^1.0.0';
+          }
+
           fs.writeFileSync(p, JSON.stringify(j, null, 2));
-          console.log(`Set x402 packages to ^${v}`);
+          console.log(`Set x402 packages to ^${v}, @payai/facilitator preserved`);
           EOF
 
       - name: Determine if there are changes
         run: |
-          # include untracked files in change detection
           if git diff --quiet && git ls-files --others --exclude-standard --error-unmatch . >/dev/null 2>&1; then
             echo "HAS_CHANGES=false" >> $GITHUB_ENV
           else

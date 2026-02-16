@@ -7,7 +7,6 @@ Next.js application demonstrating how to protect routes with a paywall using the
 - Node.js v20+ (install via [nvm](https://github.com/nvm-sh/nvm))
 - pnpm v10 (install via [pnpm.io/installation](https://pnpm.io/installation))
 - Valid EVM and SVM addresses for receiving payments
-- URL of a facilitator supporting the desired payment network, see [facilitator list](https://www.x402.org/ecosystem?category=facilitators)
 
 ## Setup
 
@@ -19,7 +18,6 @@ cp .env-local .env
 
 and fill required environment variables:
 
-- `FACILITATOR_URL` - Facilitator endpoint URL
 - `EVM_ADDRESS` - Ethereum address to receive payments
 - `SVM_ADDRESS` - Solana address to receive payments
 
@@ -52,8 +50,9 @@ import { registerExactSvmScheme } from "@x402/svm/exact/server";
 import { createPaywall } from "@x402/paywall";
 import { evmPaywall } from "@x402/paywall/evm";
 import { svmPaywall } from "@x402/paywall/svm";
+import { facilitator } from "@payai/facilitator";
 
-const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const facilitatorClient = new HTTPFacilitatorClient(facilitator);
 const server = new x402ResourceServer(facilitatorClient);
 
 // Register schemes
@@ -275,3 +274,16 @@ export const config = {
 - `eip155:8453` — Base Mainnet
 - `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` — Solana Devnet
 - `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` — Solana Mainnet
+
+## Going to Production
+
+This starter uses `@payai/facilitator` which provides a pre-configured facilitator pointing to the PayAI facilitator at `https://facilitator.payai.network`. By default, the server works without any API keys (free tier).
+
+When you're ready to go to production, create a merchant account at [merchant.payai.network](https://merchant.payai.network), get your API keys, and set the environment variables:
+
+```bash
+PAYAI_API_KEY_ID=your-key-id
+PAYAI_API_KEY_SECRET=your-key-secret
+```
+
+The `@payai/facilitator` package will automatically detect these and authenticate your requests.
